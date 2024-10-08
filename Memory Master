@@ -1,0 +1,233 @@
+// implements library
+#include <LiquidCrystal_I2C.h>
+#include <EEPROM.h>
+
+
+LiquidCrystal_I2C lcd(0x27, 16, 2); // I2C address 0x27, 16 column and 2 rows
+
+// Arrays for LEDS and Pushbuttons
+const int LEDS[] = {13, 12, 11, 10};
+const int PBS[] = {2, 3, 4, 5};
+
+/* push buttons and LEDs must be correlated in these lists, for ex. they're 1-4,
+  so the first PB and LED must be the same colours in each loop for the program to function.
+*/
+
+// defining frequencies for the sound of each LED
+int red = 262;
+int yellow = 330;
+int green = 392;
+int blue = 494;
+
+// Array for LED sounds
+const int SOUND[] = {red, yellow, green, blue};
+
+//Default values for game variables
+int sequence[100];
+int level = 1;
+
+// boolean values
+bool PBpressed = 0;
+bool noreset = 1;
+bool lose = 0;
+
+int current;
+const int BEST_SCORE_ADDRESS = 0;
+int bestScore;
+const int Sp = 7;
+int counter;
+int num = 0;
+
+void setup() {
+
+  EEPROM.get(BEST_SCORE_ADDRESS, bestScore);
+  for (int i = 0; i < 4; i++) {
+    pinMode(LEDS[i], OUTPUT);
+  }
+
+  randomSeed(analogRead(A0));
+  generateSequence();
+  lcd.init(); // initialize the lcd
+  lcd.backlight();
+  Serial.begin(9600);
+  pinMode (Sp, OUTPUT);
+
+}
+
+void loop() {
+  lcdReset();
+  lcd.print("LEVEL: ");
+  lcd.print(level);
+
+  Serial.print("LEVEL: ");
+  Serial.println(level);
+  delay(1000);
+  lcdReset();
+  lcd.print("WATCH");
+  Serial.println("WATCH");
+  for (int i = 0; i < level; i++) {
+    digitalWrite(LEDS[sequence[i]], HIGH);
+    delay(500);
+    tone(Sp, SOUND[sequence[i]], 100);
+    digitalWrite(LEDS[sequence[i]], LOW);
+    delay(500);
+  }
+  lcdReset();
+  lcd.print("PRESS");
+  Serial.println("PRESS");
+  for (int i = 0; i < level; i++) {
+    while (PBpressed == 0) {
+      for (int j = 0; j < 4; j++) {
+        //If pushbutton pressed
+        if (digitalRead(PBS[j]) == 1) {
+          //Wait for PB to be released
+
+          digitalWrite(LEDS[j], HIGH);
+          tone(Sp, SOUND[j], 100);
+          delay(100);
+          while (digitalRead(PBS[j]) == 1) {}
+          delay(300);
+          digitalWrite(LEDS[j], LOW);
+          Serial.print("button pressed: ");
+          Serial.println(j);
+
+          if (j != sequence[i])
+            lose = 1;
+          PBpressed = 1;
+
+          break;
+        }
+      }
+
+    }
+    PBpressed = 0;
+    if (lose == 1) {
+      lcdReset();
+      lcd.print("WRONG!");
+      Serial.println("WRONG!");
+      ledLost();
+
+      delay(2000);
+
+
+
+      current = level - 1;
+      updateBestScore(current);
+      if (current >= bestScore) {
+        bestScore = current;
+        lcdReset();
+        lcd.print("NEW HIGH SCORE!");
+        // play noise
+        highscore();
+        delay(1000);
+      }
+      lcdReset();
+      lcd.print("YOUR SCORE: ");
+      lcd.print(current);
+      lcd.setCursor(0, 1);
+      lcd.print("HIGH SCORE: ");
+      lcd.print(bestScore);
+      Serial.print("SCORE: ");
+      Serial.print(current);
+      Serial.print("| bestScore SCORE: ");
+      Serial.println(bestScore);
+      delay(2000);
+
+      break;
+    }
+  }
+
+  // leaderboard, and bestScore score. Press any button to restart as well.
+  if (lose == 1) {
+    lcdReset();
+    lcd.print("PRESS ANY BUTTON TO RESTART");
+
+    Serial.println("PRESS ANY BUTTON TO RESTART");
+    while (noreset) {
+      checkPB();
+
+    }
+    noreset = 1;
+    lcdReset();
+    lcd.print("Restarting...");
+    Serial.println("Restarting..");
+    for (int c = 0; c < 4; c ++) {
+      digitalWrite(LEDS[c], HIGH);
+    }
+    delay(1000);
+    for (int c = 4; c >= 0; c --) {
+      digitalWrite(LEDS[c], LOW);
+    }
+    generateSequence();
+    level = 1;
+    lose = 0;
+  }
+
+  else {
+    level++;
+  }
+
+}
+// function for sequence generation
+void generateSequence() {
+  for (int i = 0; i < 100; i++) {
+    sequence[i] = random(0, 4);
+  }
+
+}
+
+
+//function for resetting the lcd screen
+void lcdReset() {
+  lcd.clear();                 // clear display
+  lcd.setCursor(0, 0);         // move cursor to   (0, 0)
+}
+
+
+// Sound for when game is lost.
+void ledLost() {
+  tone(Sp, 55, 2000);
+}
+
+
+
+// high score noise
+void highscore() {
+  tone(Sp, 330, 100);
+  delay(100);
+  tone(Sp, 370, 100);
+  delay(100);
+  tone(Sp, 415, 100);
+  delay(100);
+  tone(Sp, 440, 100);
+  delay(100);
+  tone(Sp, 494, 100);
+  delay(100);
+  tone(Sp, 554, 100);
+  delay(100);
+  tone(Sp, 622, 100);
+  delay(100);
+  tone(Sp, 659, 300);
+  delay(300);
+}
+
+
+// checks pushbutton if pressed
+void checkPB() {
+  for (int j = 0; j < 4; j++) {
+    //If pushbutton pressed
+    if (digitalRead(PBS[j]) == 1) {
+      noreset = 0;
+    }
+  }
+}
+
+// function that updates high score on eeprom
+void updateBestScore(int current) {
+  if (current > bestScore) {
+    bestScore = current;
+    EEPROM.put(BEST_SCORE_ADDRESS, bestScore);
+    EEPROM.get(BEST_SCORE_ADDRESS, bestScore);  // Read back from EEPROM to ensure it is updated
+  }
+}
+
